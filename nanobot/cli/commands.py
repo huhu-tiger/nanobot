@@ -218,6 +218,7 @@ def gateway(
         brave_api_key=config.tools.web.search.api_key or None,
         exec_config=config.tools.exec,
         cron_service=cron,
+        restrict_to_workspace=config.tools.restrict_to_workspace,
     )
     
     # Extension: Set up cron callback with agent
