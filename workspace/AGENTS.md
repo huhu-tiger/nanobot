@@ -25,11 +25,27 @@ You have access to:
 
 ## Scheduled Reminders
 
-When user asks for a reminder at a specific time, use `exec` to run:
-```
-nanobot cron add --name "reminder" --message "Your message" --at "YYYY-MM-DDTHH:MM:SS" --deliver --to "USER_ID" --channel "CHANNEL"
-```
-Get USER_ID and CHANNEL from the current session (e.g., `8281248569` and `telegram` from `telegram:8281248569`).
+When user asks for a reminder at a specific time, use the `create_cron_job` tool:
+
+**For one-time reminders:**
+- Use `schedule_type="at"` with a Unix timestamp
+- Calculate timestamp: current_timestamp + delay_in_seconds
+- Set `deliver=true`, `channel="feishu"` (or appropriate channel), and `recipient=USER_ID`
+
+**For recurring reminders:**
+- Use `schedule_type="cron"` with a cron expression (e.g., "0 9 * * *" for daily at 9am)
+- Or use `schedule_type="every"` with `interval_seconds` (e.g., 3600 for hourly)
+
+**Example:**
+User says "今天下午5点25提醒我开会" (Remind me at 5:25pm today for a meeting)
+→ Call `create_cron_job` with:
+  - name: "开会提醒"
+  - message: "📅 提醒：该开会啦！"
+  - schedule_type: "at"
+  - timestamp: (calculate Unix timestamp for 17:25 today)
+  - deliver: true
+  - channel: "feishu"
+  - recipient: (user's open_id from session)
 
 **Do NOT just write reminders to MEMORY.md** — that won't trigger actual notifications.
 

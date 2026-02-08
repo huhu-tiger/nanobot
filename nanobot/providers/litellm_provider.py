@@ -7,6 +7,7 @@ import litellm
 from litellm import acompletion
 
 from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
+from nanobot.utils.logging import log_llm_request, log_llm_response, log_llm_error
 
 
 class LiteLLMProvider(LLMProvider):
@@ -62,7 +63,7 @@ class LiteLLMProvider(LLMProvider):
             elif "zhipu" in default_model or "glm" in default_model or "zai" in default_model:
                 os.environ.setdefault("ZAI_API_KEY", api_key)
                 os.environ.setdefault("ZHIPUAI_API_KEY", api_key)
-            elif "dashscope" in default_model or "qwen" in default_model.lower():
+            elif "dashscope" in default_model:
                 os.environ.setdefault("DASHSCOPE_API_KEY", api_key)
             elif "groq" in default_model:
                 os.environ.setdefault("GROQ_API_KEY", api_key)
@@ -73,7 +74,7 @@ class LiteLLMProvider(LLMProvider):
         if api_base:
             litellm.api_base = api_base
         
-        # Disable LiteLLM logging noise
+        # Disable LiteLLM logging noise (suppress_debug_info 只影响 litellm 内部日志)
         litellm.suppress_debug_info = True
     
     async def chat(
@@ -103,7 +104,7 @@ class LiteLLMProvider(LLMProvider):
         # (keywords, target_prefix, skip_if_starts_with)
         _prefix_rules = [
             (("glm", "zhipu"), "zai", ("zhipu/", "zai/", "openrouter/", "hosted_vllm/")),
-            (("qwen", "dashscope"), "dashscope", ("dashscope/", "openrouter/")),
+            (("dashscope",), "dashscope", ("dashscope/", "openrouter/")),
             (("moonshot", "kimi"), "moonshot", ("moonshot/", "openrouter/")),
             (("gemini",), "gemini", ("gemini/",)),
         ]
@@ -144,10 +145,45 @@ class LiteLLMProvider(LLMProvider):
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
         
+        # Log request
+        log_llm_request(
+            model=model,
+            messages=messages,
+            tools=tools,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            api_base=self.api_base,
+            depth=1
+        )
+        
         try:
             response = await acompletion(**kwargs)
+            
+            # Log response
+            choice = response.choices[0]
+            message = choice.message
+            usage = None
+            if hasattr(response, "usage") and response.usage:
+                usage = {
+                    "prompt_tokens": response.usage.prompt_tokens,
+                    "completion_tokens": response.usage.completion_tokens,
+                    "total_tokens": response.usage.total_tokens,
+                }
+            tool_calls = message.tool_calls if hasattr(message, "tool_calls") else None
+            log_llm_response(
+                content=message.content,
+                tool_calls=tool_calls,
+                finish_reason=choice.finish_reason or "stop",
+                usage=usage,
+                raw_response=response,  # 传递原始响应
+                depth=1
+            )
+            
             return self._parse_response(response)
         except Exception as e:
+            # Log error
+            log_llm_error(error=e, depth=1)
+            
             # Return error as content for graceful handling
             return LLMResponse(
                 content=f"Error calling LLM: {str(e)}",

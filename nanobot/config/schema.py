@@ -137,8 +137,8 @@ class Config(BaseSettings):
             "aihubmix": p.aihubmix, "openrouter": p.openrouter,
             "deepseek": p.deepseek, "anthropic": p.anthropic, "claude": p.anthropic,
             "openai": p.openai, "gpt": p.openai, "gemini": p.gemini,
-            "zhipu": p.zhipu, "glm": p.zhipu, "zai": p.zhipu,
-            "dashscope": p.dashscope, "qwen": p.dashscope,
+            "zhipu": p.zhipu, "glm": p.glm, "zai": p.zhipu,
+            "dashscope": p.dashscope,
             "groq": p.groq, "moonshot": p.moonshot, "kimi": p.moonshot, "vllm": p.vllm,
         }
         for kw, provider in keyword_map.items():
