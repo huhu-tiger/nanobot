@@ -147,6 +147,23 @@ This file stores important information that should persist across sessions.
         console.print("  [dim]Created memory/MEMORY.md[/dim]")
 
 
+def _make_provider(config):
+    """Create LiteLLMProvider from config. Exits if no API key found."""
+    from nanobot.providers.litellm_provider import LiteLLMProvider
+    p = config.get_provider()
+    model = config.agents.defaults.model
+    if not (p and p.api_key) and not model.startswith("bedrock/"):
+        console.print("[red]Error: No API key configured.[/red]")
+        console.print("Set one in ~/.nanobot/config.json under providers section")
+        raise typer.Exit(1)
+    return LiteLLMProvider(
+        api_key=p.api_key if p else None,
+        api_base=config.get_api_base(),
+        default_model=model,
+        extra_headers=p.extra_headers if p else None,
+    )
+
+
 # ============================================================================
 # Gateway / Server
 # ============================================================================
@@ -160,16 +177,11 @@ def gateway(
     """Start the nanobot gateway."""
     from nanobot.config.loader import load_config, get_data_dir
     from nanobot.bus.queue import MessageBus
-    from nanobot.providers.litellm_provider import LiteLLMProvider
     from nanobot.agent.loop import AgentLoop
     from nanobot.channels.manager import ChannelManager
     from nanobot.cron.service import CronService
     from nanobot.cron.types import CronJob
     from nanobot.heartbeat.service import HeartbeatService
-    
-    # Extension: Setup logging
-    from nanobot.cli.commands_ext import setup_logging
-    setup_logging(verbose)
     
     if verbose:
         import logging
@@ -178,35 +190,12 @@ def gateway(
     console.print(f"{__logo__} Starting nanobot gateway on port {port}...")
     
     config = load_config()
-    
-    # Create components
     bus = MessageBus()
+    provider = _make_provider(config)
     
-    # Create provider (supports OpenRouter, Anthropic, OpenAI, Bedrock)
-    api_key = config.get_api_key()
-    api_base = config.get_api_base()
-    model = config.agents.defaults.model
-    is_bedrock = model.startswith("bedrock/")
-
-    if not api_key and not is_bedrock:
-        console.print("[red]Error: No API key configured.[/red]")
-        console.print("Set one in ~/.nanobot/config.json under providers.openrouter.apiKey")
-        raise typer.Exit(1)
-    
-    provider = LiteLLMProvider(
-        api_key=api_key,
-        api_base=api_base,
-        default_model=config.agents.defaults.model
-    )
-    
-    # Create cron service first (needed by agent)
+    # Create cron service first (callback set after agent creation)
     cron_store_path = get_data_dir() / "cron" / "jobs.json"
-    
-    # Placeholder async callback
-    async def placeholder_callback(job: CronJob) -> str | None:
-        return None
-    
-    cron = CronService(cron_store_path, on_job=placeholder_callback)
+    cron = CronService(cron_store_path)
     
     # Create agent with cron service
     agent = AgentLoop(
@@ -221,9 +210,24 @@ def gateway(
         restrict_to_workspace=config.tools.restrict_to_workspace,
     )
     
-    # Extension: Set up cron callback with agent
-    from nanobot.cli.commands_ext import setup_cron_with_agent
-    setup_cron_with_agent(cron, bus, agent)
+    # Set cron callback (needs agent)
+    async def on_cron_job(job: CronJob) -> str | None:
+        """Execute a cron job through the agent."""
+        response = await agent.process_direct(
+            job.payload.message,
+            session_key=f"cron:{job.id}",
+            channel=job.payload.channel or "cli",
+            chat_id=job.payload.to or "direct",
+        )
+        if job.payload.deliver and job.payload.to:
+            from nanobot.bus.events import OutboundMessage
+            await bus.publish_outbound(OutboundMessage(
+                channel=job.payload.channel or "cli",
+                chat_id=job.payload.to,
+                content=response or ""
+            ))
+        return response
+    cron.on_job = on_cron_job
     
     # Create heartbeat service
     async def on_heartbeat(prompt: str) -> str:
@@ -284,26 +288,12 @@ def agent(
     """Interact with the agent directly."""
     from nanobot.config.loader import load_config
     from nanobot.bus.queue import MessageBus
-    from nanobot.providers.litellm_provider import LiteLLMProvider
     from nanobot.agent.loop import AgentLoop
     
     config = load_config()
     
-    api_key = config.get_api_key()
-    api_base = config.get_api_base()
-    model = config.agents.defaults.model
-    is_bedrock = model.startswith("bedrock/")
-
-    if not api_key and not is_bedrock:
-        console.print("[red]Error: No API key configured.[/red]")
-        raise typer.Exit(1)
-
     bus = MessageBus()
-    provider = LiteLLMProvider(
-        api_key=api_key,
-        api_base=api_base,
-        default_model=config.agents.defaults.model
-    )
+    provider = _make_provider(config)
     
     agent_loop = AgentLoop(
         bus=bus,
@@ -311,6 +301,7 @@ def agent(
         workspace=config.workspace_path,
         brave_api_key=config.tools.web.search.api_key or None,
         exec_config=config.tools.exec,
+        restrict_to_workspace=config.tools.restrict_to_workspace,
     )
     
     if message:
@@ -369,6 +360,13 @@ def channels_status():
         wa.bridge_url
     )
 
+    dc = config.channels.discord
+    table.add_row(
+        "Discord",
+        "✓" if dc.enabled else "✗",
+        dc.gateway_url
+    )
+    
     # Telegram
     tg = config.channels.telegram
     tg_config = f"token: {tg.token[:10]}..." if tg.token else "[dim]not configured[/dim]"
@@ -599,97 +597,17 @@ def cron_run(
     force: bool = typer.Option(False, "--force", "-f", help="Run even if disabled"),
 ):
     """Manually run a job."""
-    from nanobot.config.loader import load_config, get_data_dir
-    from nanobot.bus.queue import MessageBus
-    from nanobot.providers.litellm_provider import LiteLLMProvider
-    from nanobot.agent.loop import AgentLoop
-    from nanobot.channels.manager import ChannelManager
+    from nanobot.config.loader import get_data_dir
     from nanobot.cron.service import CronService
-    from nanobot.cron.types import CronJob
-    
-    console.print(f"[yellow]Initializing agent and channels...[/yellow]")
-    
-    config = load_config()
-    
-    # Create components
-    bus = MessageBus()
-    
-    # Create provider
-    api_key = config.get_api_key()
-    api_base = config.get_api_base()
-    model = config.agents.defaults.model
-    
-    if not api_key:
-        console.print("[red]Error: No API key configured.[/red]")
-        raise typer.Exit(1)
-    
-    provider = LiteLLMProvider(
-        api_key=api_key,
-        api_base=api_base,
-        default_model=model
-    )
-    
-    # Create agent
-    agent = AgentLoop(
-        bus=bus,
-        provider=provider,
-        workspace=config.workspace_path,
-        model=model,
-        max_iterations=config.agents.defaults.max_tool_iterations,
-        brave_api_key=config.tools.web.search.api_key or None,
-        exec_config=config.tools.exec,
-    )
-    
-    # Create channel manager
-    channels = ChannelManager(config, bus)
-    
-    # Create cron service with callback
-    async def on_cron_job(job: CronJob) -> str | None:
-        """Execute a cron job - prioritize direct message delivery."""
-        console.print(f"[cyan]Executing job: {job.name}[/cyan]")
-        console.print(f"[cyan]Message: {job.payload.message}[/cyan]")
-        console.print(f"[cyan]Deliver: {job.payload.deliver}[/cyan]")
-        
-        # If deliver flag is set, send message directly to channel first
-        if job.payload.deliver and job.payload.to:
-            console.print(f"[green]→ Sending directly to {job.payload.channel}:{job.payload.to}[/green]")
-            from nanobot.bus.events import OutboundMessage
-            await bus.publish_outbound(OutboundMessage(
-                channel=job.payload.channel or "feishu",
-                chat_id=job.payload.to,
-                content=job.payload.message
-            ))
-            return job.payload.message
-        else:
-            # No deliver flag - process through agent
-            console.print(f"[yellow]→ Processing through agent[/yellow]")
-            response = await agent.process_direct(
-                job.payload.message,
-                session_key=f"cron:{job.id}"
-            )
-            return response
     
     store_path = get_data_dir() / "cron" / "jobs.json"
-    service = CronService(store_path, on_job=on_cron_job)
+    service = CronService(store_path)
     
     async def run():
-        # Start channels
-        await channels.start_all()
-        await asyncio.sleep(1)  # Wait for channels to initialize
-        
-        # Run job
-        result = await service.run_job(job_id, force=force)
-        
-        # Wait for message delivery
-        await asyncio.sleep(2)
-        
-        # Stop channels
-        await channels.stop_all()
-        
-        return result
+        return await service.run_job(job_id, force=force)
     
     if asyncio.run(run()):
-        console.print(f"[green]✓[/green] Job executed successfully")
+        console.print(f"[green]✓[/green] Job executed")
     else:
         console.print(f"[red]Failed to run job {job_id}[/red]")
 
@@ -721,12 +639,16 @@ def status():
         has_anthropic = bool(config.providers.anthropic.api_key)
         has_openai = bool(config.providers.openai.api_key)
         has_gemini = bool(config.providers.gemini.api_key)
+        has_zhipu = bool(config.providers.zhipu.api_key)
         has_vllm = bool(config.providers.vllm.api_base)
+        has_aihubmix = bool(config.providers.aihubmix.api_key)
         
         console.print(f"OpenRouter API: {'[green]✓[/green]' if has_openrouter else '[dim]not set[/dim]'}")
         console.print(f"Anthropic API: {'[green]✓[/green]' if has_anthropic else '[dim]not set[/dim]'}")
         console.print(f"OpenAI API: {'[green]✓[/green]' if has_openai else '[dim]not set[/dim]'}")
         console.print(f"Gemini API: {'[green]✓[/green]' if has_gemini else '[dim]not set[/dim]'}")
+        console.print(f"Zhipu AI API: {'[green]✓[/green]' if has_zhipu else '[dim]not set[/dim]'}")
+        console.print(f"AiHubMix API: {'[green]✓[/green]' if has_aihubmix else '[dim]not set[/dim]'}")
         vllm_status = f"[green]✓ {config.providers.vllm.api_base}[/green]" if has_vllm else "[dim]not set[/dim]"
         console.print(f"vLLM/Local: {vllm_status}")
 

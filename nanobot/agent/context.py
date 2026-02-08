@@ -2,6 +2,7 @@
 
 import base64
 import mimetypes
+import platform
 from pathlib import Path
 from typing import Any
 
@@ -72,36 +73,25 @@ Skills with available="false" need dependencies installed first - you can try in
     def _get_identity(self) -> str:
         """Get the core identity section."""
         from datetime import datetime
-        import locale
-        
-        # 获取当前时间
-        now = datetime.now()
-        
-        # 中文星期映射
-        weekday_cn = {
-            'Monday': '星期一',
-            'Tuesday': '星期二',
-            'Wednesday': '星期三',
-            'Thursday': '星期四',
-            'Friday': '星期五',
-            'Saturday': '星期六',
-            'Sunday': '星期日'
-        }
-        
-        # 格式化时间：2026-02-06 16:20 (星期五)
-        time_str = now.strftime("%Y-%m-%d %H:%M")
-        weekday_en = now.strftime("%A")
-        weekday = weekday_cn.get(weekday_en, weekday_en)
-        time_display = f"{time_str} ({weekday})"
-        
+        now = datetime.now().strftime("%Y-%m-%d %H:%M (%A)")
         workspace_path = str(self.workspace.expanduser().resolve())
+        system = platform.system()
+        runtime = f"{'macOS' if system == 'Darwin' else system} {platform.machine()}, Python {platform.python_version()}"
         
         return f"""# nanobot 🐈
 
-You are nanobot, a helpful AI assistant with tool-calling capabilities.
+You are nanobot, a helpful AI assistant. You have access to tools that allow you to:
+- Read, write, and edit files
+- Execute shell commands
+- Search the web and fetch web pages
+- Send messages to users on chat channels
+- Spawn subagents for complex background tasks
 
-## 当前时间
-{time_display}
+## Current Time
+{now}
+
+## Runtime
+{runtime}
 
 ## Workspace
 Your workspace is at: {workspace_path}
@@ -109,36 +99,9 @@ Your workspace is at: {workspace_path}
 - Daily notes: {workspace_path}/memory/YYYY-MM-DD.md
 - Custom skills: {workspace_path}/skills/{{skill-name}}/SKILL.md
 
-## CRITICAL RULES FOR TOOL USAGE
-
-**YOU MUST USE TOOLS TO PERFORM ACTIONS. DO NOT PRETEND TO USE TOOLS.**
-
-When user requests an action, you MUST:
-1. Call the appropriate tool
-2. Wait for the tool result
-3. Then respond based on the result
-
-**Common actions that REQUIRE tool calls:**
-- User mentions a time for reminder/meeting → MUST call `create_cron_job`
-- User asks to read a file → MUST call `read_file`
-- User asks to write a file → MUST call `write_file`
-- User asks to search web → MUST call `web_search`
-- User asks to run command → MUST call `exec`
-
-**WRONG behavior (DO NOT DO THIS):**
-❌ User: "7点提醒我开会"
-❌ You: "✅ 已创建提醒！" (WITHOUT calling create_cron_job tool)
-
-**CORRECT behavior:**
-✅ User: "7点提醒我开会"
-✅ You: [CALL create_cron_job tool with proper parameters]
-✅ You: [WAIT for tool result]
-✅ You: "✅ 已创建提醒！"
-
-**Exception:** Only reply directly without tools when:
-- User asks a question (not requesting an action)
-- User is having a conversation
-- No action is needed
+IMPORTANT: When responding to direct questions or conversations, reply directly with your text response.
+Only use the 'message' tool when you need to send a message to a specific chat channel (like WhatsApp).
+For normal conversation, just respond with text - do not call the message tool.
 
 Always be helpful, accurate, and concise. When using tools, explain what you're doing.
 When remembering something, write to {workspace_path}/memory/MEMORY.md"""
@@ -161,7 +124,8 @@ When remembering something, write to {workspace_path}/memory/MEMORY.md"""
         current_message: str,
         skill_names: list[str] | None = None,
         media: list[str] | None = None,
-        **kwargs  # Accept additional kwargs like channel_info
+        channel: str | None = None,
+        chat_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """
         Build the complete message list for an LLM call.
@@ -171,7 +135,8 @@ When remembering something, write to {workspace_path}/memory/MEMORY.md"""
             current_message: The new user message.
             skill_names: Optional skills to include.
             media: Optional list of local file paths for images/media.
-            **kwargs: Additional context (e.g., channel_info)
+            channel: Current channel (telegram, feishu, etc.).
+            chat_id: Current chat/user ID.
 
         Returns:
             List of messages including system prompt.
@@ -180,12 +145,8 @@ When remembering something, write to {workspace_path}/memory/MEMORY.md"""
 
         # System prompt
         system_prompt = self.build_system_prompt(skill_names)
-        
-        # Inject channel context if provided (extension)
-        if "channel_info" in kwargs:
-            from nanobot.agent.context_ext import inject_channel_info
-            system_prompt = inject_channel_info(system_prompt, kwargs["channel_info"])
-        
+        if channel and chat_id:
+            system_prompt += f"\n\n## Current Session\nChannel: {channel}\nChat ID: {chat_id}"
         messages.append({"role": "system", "content": system_prompt})
 
         # History
