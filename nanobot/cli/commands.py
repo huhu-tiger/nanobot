@@ -332,12 +332,13 @@ def gateway(
     from nanobot.cron.service import CronService
     from nanobot.cron.types import CronJob
     from nanobot.heartbeat.service import HeartbeatService
+    from nanobot.utils.logging import setup_logging
     
-    if verbose:
-        import logging
-        logging.basicConfig(level=logging.DEBUG)
+    # Setup logging
+    log_file = setup_logging(verbose=verbose)
     
     console.print(f"{__logo__} Starting nanobot gateway on port {port}...")
+    console.print(f"Logging to: {log_file}")
     
     config = load_config()
     bus = MessageBus()
@@ -362,24 +363,9 @@ def gateway(
         session_manager=session_manager,
     )
     
-    # Set cron callback (needs agent)
-    async def on_cron_job(job: CronJob) -> str | None:
-        """Execute a cron job through the agent."""
-        response = await agent.process_direct(
-            job.payload.message,
-            session_key=f"cron:{job.id}",
-            channel=job.payload.channel or "cli",
-            chat_id=job.payload.to or "direct",
-        )
-        if job.payload.deliver and job.payload.to:
-            from nanobot.bus.events import OutboundMessage
-            await bus.publish_outbound(OutboundMessage(
-                channel=job.payload.channel or "cli",
-                chat_id=job.payload.to,
-                content=response or ""
-            ))
-        return response
-    cron.on_job = on_cron_job
+    # Set cron callback (needs agent) - use extension for direct delivery support
+    from nanobot.cli.commands_ext import create_cron_callback
+    cron.on_job = create_cron_callback(bus, agent)
     
     # Create heartbeat service
     async def on_heartbeat(prompt: str) -> str:

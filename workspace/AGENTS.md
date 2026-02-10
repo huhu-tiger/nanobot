@@ -25,13 +25,26 @@ You have access to:
 
 ## Scheduled Reminders
 
-When user asks for a reminder at a specific time, use `exec` to run:
-```
-nanobot cron add --name "reminder" --message "Your message" --at "YYYY-MM-DDTHH:MM:SS" --deliver --to "USER_ID" --channel "CHANNEL"
-```
-Get USER_ID and CHANNEL from the current session (e.g., `8281248569` and `telegram` from `telegram:8281248569`).
+**CRITICAL RULE**: When user asks "提醒我X分钟后..." or any reminder request, you MUST call the `cron` tool immediately. Do NOT write text responses pretending you created a reminder!
 
-**Do NOT just write reminders to MEMORY.md** — that won't trigger actual notifications.
+**Quick reference:**
+- One-time: `cron(action="add", name="提醒名", message="提醒内容", at_timestamp=<current_unix_timestamp + seconds>)`
+- Recurring: `cron(action="add", name="提醒名", message="提醒内容", every_seconds=3600)`
+
+**Example for "2分钟后提醒我喝水":**
+```
+cron(action="add", name="喝水提醒", message="💧 该喝水啦！", at_timestamp=<current_timestamp + 120>)
+```
+
+**Do NOT:**
+- ❌ Say "已为你设置提醒" without calling the tool
+- ❌ Make up task IDs or times
+- ❌ Write reminders to MEMORY.md
+
+**Do:**
+- ✅ Call `cron` tool immediately
+- ✅ Use the Unix timestamp from system prompt
+- ✅ Confirm with the actual job ID returned by the tool
 
 ## Heartbeat Tasks
 
