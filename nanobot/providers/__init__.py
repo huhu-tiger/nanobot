@@ -2,5 +2,6 @@
 
 from nanobot.providers.base import LLMProvider, LLMResponse
 from nanobot.providers.litellm_provider import LiteLLMProvider
+from nanobot.providers.litellm_provider_ext import LiteLLMProviderExt
 
-__all__ = ["LLMProvider", "LLMResponse", "LiteLLMProvider"]
+__all__ = ["LLMProvider", "LLMResponse", "LiteLLMProvider", "LiteLLMProviderExt"]
