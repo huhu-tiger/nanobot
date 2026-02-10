@@ -38,8 +38,11 @@ class LiteLLMProvider(LLMProvider):
         # Detect AiHubMix by api_base
         self.is_aihubmix = bool(api_base and "aihubmix" in api_base)
         
+        # Detect Aliyun (uses OpenAI-compatible API)
+        self.is_aliyun = "aliyun" in default_model.lower()
+        
         # Track if using custom endpoint (vLLM, etc.)
-        self.is_vllm = bool(api_base) and not self.is_openrouter and not self.is_aihubmix
+        self.is_vllm = bool(api_base) and not self.is_openrouter and not self.is_aihubmix and not self.is_aliyun
         
         # Configure LiteLLM based on provider
         if api_key:
@@ -48,6 +51,9 @@ class LiteLLMProvider(LLMProvider):
                 os.environ["OPENROUTER_API_KEY"] = api_key
             elif self.is_aihubmix:
                 # AiHubMix gateway - OpenAI-compatible
+                os.environ["OPENAI_API_KEY"] = api_key
+            elif self.is_aliyun:
+                # Aliyun - OpenAI-compatible
                 os.environ["OPENAI_API_KEY"] = api_key
             elif self.is_vllm:
                 # vLLM/custom endpoint - uses OpenAI-compatible API
@@ -119,6 +125,9 @@ class LiteLLMProvider(LLMProvider):
             model = f"openrouter/{model}"
         elif self.is_aihubmix:
             model = f"openai/{model.split('/')[-1]}"
+        elif self.is_aliyun and not model.startswith("openai/"):
+            # Aliyun uses OpenAI-compatible API
+            model = f"openai/{model}"
         elif self.is_vllm:
             model = f"hosted_vllm/{model}"
         

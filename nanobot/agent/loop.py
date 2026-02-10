@@ -104,7 +104,8 @@ class AgentLoop:
         
         # Cron tool (for scheduling)
         if self.cron_service:
-            self.tools.register(CronTool(self.cron_service))
+            from nanobot.agent.loop_ext import register_cron_tools
+            register_cron_tools(self.tools, self.cron_service)
     
     async def run(self) -> None:
         """Run the agent loop, processing messages from the bus."""

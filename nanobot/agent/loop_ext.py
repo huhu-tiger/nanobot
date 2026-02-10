@@ -17,8 +17,8 @@ def register_cron_tools(tools: "ToolRegistry", cron_service: "CronService") -> N
         tools: Tool registry
         cron_service: Cron service instance
     """
-    from nanobot.agent.tools.cron import CronTool
+    from nanobot.agent.tools.cron_ext import CronToolExt
     
-    tools.register(CronTool(cron_service))
+    tools.register(CronToolExt(cron_service))
     
-    logger.info("Registered cron tool")
+    logger.info("Registered extended cron tool")

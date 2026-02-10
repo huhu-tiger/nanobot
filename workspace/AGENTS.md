@@ -25,29 +25,26 @@ You have access to:
 
 ## Scheduled Reminders
 
-When user asks for a reminder at a specific time, use the `create_cron_job` tool:
+**CRITICAL RULE**: When user asks "提醒我X分钟后..." or any reminder request, you MUST call the `cron` tool immediately. Do NOT write text responses pretending you created a reminder!
 
-**For one-time reminders:**
-- Use `schedule_type="at"` with a Unix timestamp
-- Calculate timestamp: current_timestamp + delay_in_seconds
-- Set `deliver=true`, `channel="feishu"` (or appropriate channel), and `recipient=USER_ID`
+**Quick reference:**
+- One-time: `cron(action="add", name="提醒名", message="提醒内容", at_timestamp=<current_unix_timestamp + seconds>)`
+- Recurring: `cron(action="add", name="提醒名", message="提醒内容", every_seconds=3600)`
 
-**For recurring reminders:**
-- Use `schedule_type="cron"` with a cron expression (e.g., "0 9 * * *" for daily at 9am)
-- Or use `schedule_type="every"` with `interval_seconds` (e.g., 3600 for hourly)
+**Example for "2分钟后提醒我喝水":**
+```
+cron(action="add", name="喝水提醒", message="💧 该喝水啦！", at_timestamp=<current_timestamp + 120>)
+```
 
-**Example:**
-User says "今天下午5点25提醒我开会" (Remind me at 5:25pm today for a meeting)
-→ Call `create_cron_job` with:
-  - name: "开会提醒"
-  - message: "📅 提醒：该开会啦！"
-  - schedule_type: "at"
-  - timestamp: (calculate Unix timestamp for 17:25 today)
-  - deliver: true
-  - channel: "feishu"
-  - recipient: (user's open_id from session)
+**Do NOT:**
+- ❌ Say "已为你设置提醒" without calling the tool
+- ❌ Make up task IDs or times
+- ❌ Write reminders to MEMORY.md
 
-**Do NOT just write reminders to MEMORY.md** — that won't trigger actual notifications.
+**Do:**
+- ✅ Call `cron` tool immediately
+- ✅ Use the Unix timestamp from system prompt
+- ✅ Confirm with the actual job ID returned by the tool
 
 ## Heartbeat Tasks
 

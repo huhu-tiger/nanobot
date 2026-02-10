@@ -3,6 +3,7 @@
 import base64
 import mimetypes
 import platform
+import time
 from pathlib import Path
 from typing import Any
 
@@ -74,6 +75,7 @@ Skills with available="false" need dependencies installed first - you can try in
         """Get the core identity section."""
         from datetime import datetime
         now = datetime.now().strftime("%Y-%m-%d %H:%M (%A)")
+        unix_timestamp = int(time.time())
         workspace_path = str(self.workspace.expanduser().resolve())
         system = platform.system()
         runtime = f"{'macOS' if system == 'Darwin' else system} {platform.machine()}, Python {platform.python_version()}"
@@ -89,6 +91,11 @@ You are nanobot, a helpful AI assistant. You have access to tools that allow you
 
 ## Current Time
 {now}
+Unix timestamp: {unix_timestamp} seconds
+
+**IMPORTANT**: When calculating future timestamps for cron jobs, use the Unix timestamp above as the base. For example:
+- 5 minutes from now: {unix_timestamp} + 300 = {unix_timestamp + 300}
+- 1 hour from now: {unix_timestamp} + 3600 = {unix_timestamp + 3600}
 
 ## Runtime
 {runtime}
