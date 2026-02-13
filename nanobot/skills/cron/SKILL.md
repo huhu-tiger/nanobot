@@ -9,10 +9,11 @@ description: Schedule reminders and recurring tasks.
 
 Use the `cron` tool to schedule reminders or recurring tasks.
 
-## Two Modes
+## Three Modes
 
 1. **Reminder** - message is sent directly to user
 2. **Task** - message is a task description, agent executes and sends result
+3. **One-time** - runs once at a specific time, then auto-deletes
 
 ## Examples
 
@@ -31,6 +32,11 @@ Dynamic task (agent executes each time):
 cron(action="add", message="Check HKUDS/nanobot GitHub stars and report", every_seconds=600)
 ```
 
+One-time scheduled task (compute ISO datetime from current time):
+```
+cron(action="add", message="Remind me about the meeting", at="<ISO datetime>")
+```
+
 List/remove:
 ```
 cron(action="list")
@@ -46,9 +52,4 @@ cron(action="remove", job_id="abc123")
 | every hour | every_seconds: 3600 |
 | every day at 8am | cron_expr: "0 8 * * *" |
 | weekdays at 5pm | cron_expr: "0 17 * * 1-5" |
-
-## Critical Rules
-
-1. **ALWAYS call the tool** - Never pretend to create a reminder without calling `cron`
-2. **Use at_timestamp for one-time reminders** - Calculate: current_timestamp + seconds_delay
-3. **Confirm after creation** - After calling the tool, confirm the job ID and next run time
+| at a specific time | at: ISO datetime string (compute from current time) |
