@@ -60,6 +60,10 @@ class Tool(ABC):
         return self._validate(params, {**schema, "type": "object"}, "")
 
     def _validate(self, val: Any, schema: dict[str, Any], path: str) -> list[str]:
+        # Allow None for optional parameters
+        if val is None:
+            return []
+        
         t, label = schema.get("type"), path or "parameter"
         if t in self._TYPE_MAP and not isinstance(val, self._TYPE_MAP[t]):
             return [f"{label} should be {t}"]

@@ -165,6 +165,8 @@ class SkillsLoader:
             if match:
                 return content[match.end():].strip()
         return content
+
+
     
     def _parse_nanobot_metadata(self, raw: str) -> dict:
         """Parse nanobot metadata JSON from frontmatter."""
